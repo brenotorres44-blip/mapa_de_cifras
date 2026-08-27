@@ -139,6 +139,11 @@ function escapeHtml(str) {
   });
 }
 
+function sharpToFlatLabel(nota) {
+  const idx = NOTES_SHARP.indexOf(nota);
+  return idx === -1 ? nota : NOTES_FLAT[idx];
+}
+
 // ==================== ESTADO GLOBAL ====================
 const NOTAS_TECLADO = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const QUALIDADES = [
@@ -157,12 +162,12 @@ const state = {
   editor: {
     titulo: "", autor: "", categoria: "comunidade", pin: "",
     secoes: [], qualidade: "", novoCompasso: true, secaoAtivaIdx: 0,
-    erro: "", publicando: false,
+    erro: "", publicando: false, useFlats: false,
   },
 };
 
 function resetEditor() {
-  state.editor = { titulo: "", autor: "", categoria: "comunidade", pin: "", secoes: [], qualidade: "", novoCompasso: true, secaoAtivaIdx: 0, erro: "", publicando: false };
+  state.editor = { titulo: "", autor: "", categoria: "comunidade", pin: "", secoes: [], qualidade: "", novoCompasso: true, secaoAtivaIdx: 0, erro: "", publicando: false, useFlats: false };
 }
 
 // ==================== CARREGAR MÚSICAS ====================
@@ -288,7 +293,8 @@ function criarMusicaHtml() {
 
   let teclasHtml = "";
   NOTAS_TECLADO.forEach(function (nota) {
-    teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#e8e0d0;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + nota + '</button>';
+    const label = ed.useFlats ? sharpToFlatLabel(nota) : nota;
+    teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#e8e0d0;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + label + '</button>';
   });
 
   let secoesPadraoHtml = "";
@@ -341,7 +347,11 @@ function criarMusicaHtml() {
       '</label>' +
       (ed.categoria === "oficial" ? '<input id="campo-pin" class="input" style="width:100px" type="password" placeholder="PIN" value="' + escapeHtml(ed.pin) + '" />' : "") +
     '</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:16px">' + chipsHtml + '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;margin-bottom:16px">' + chipsHtml +
+      '<label style="font-size:12px;color:#999;display:flex;align-items:center;gap:6px;margin-left:12px">' +
+        '<input type="checkbox" data-action="toggle-flats-editor" ' + (ed.useFlats ? "checked" : "") + '/> Usar bemóis (b)' +
+      '</label>' +
+    '</div>' +
     '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;padding:16px;background:#111;border:1px solid #2a2a2a">' + teclasHtml + '</div>' +
     '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">' +
       '<button class="btn ' + (ed.novoCompasso ? "" : "ativo") + '" data-action="toggle-compasso">' + (ed.novoCompasso ? "PRÓXIMA NOTA = NOVO COMPASSO" : "PRÓXIMA NOTA JUNTA NO COMPASSO") + '</button>' +
@@ -363,7 +373,8 @@ function criarMusicaHtml() {
 // ==================== AÇÕES DO EDITOR ====================
 function adicionarAcorde(raiz) {
   const ed = state.editor;
-  const acorde = raiz + ed.qualidade;
+  const raizExibida = ed.useFlats ? sharpToFlatLabel(raiz) : raiz;
+  const acorde = raizExibida + ed.qualidade;
   if (ed.secoes.length === 0) return;
   const idx = Math.min(ed.secaoAtivaIdx, ed.secoes.length - 1);
   const alvo = ed.secoes[idx];
@@ -437,6 +448,7 @@ function bindEvents() {
     if (action === "transpor") el.addEventListener("click", function () { state.viewer.semitons += parseInt(el.dataset.delta, 10); render(); });
     if (action === "resetar-tom") el.addEventListener("click", function () { state.viewer.semitons = 0; render(); });
     if (action === "toggle-flats") el.addEventListener("change", function () { state.viewer.useFlats = el.checked; render(); });
+    if (action === "toggle-flats-editor") el.addEventListener("change", function () { state.editor.useFlats = el.checked; render(); });
     if (action === "qualidade") el.addEventListener("click", function () { state.editor.qualidade = el.dataset.suffix; render(); });
     if (action === "nota") el.addEventListener("click", function () { adicionarAcorde(el.dataset.nota); render(); });
     if (action === "toggle-compasso") el.addEventListener("click", function () { state.editor.novoCompasso = false; render(); });
