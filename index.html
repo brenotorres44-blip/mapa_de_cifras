@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mapa de Cifras</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0a0a0a; }
+  #root { min-height: 100vh; }
+  button { font-family: inherit; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect } = React;
+
+// ==================== CONFIG SUPABASE ====================
+const SUPABASE_URL = "https://fwycnfsxyyqywfsrozjn.supabase.co";
+const SUPABASE_KEY = "sb_publishable_JfPdj4gahyQ7pHchQm5Ujg_mmuTaaJs";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const PIN_OFICIAL = "1985"; // troque por um PIN de sua escolha
+
+// ==================== MOTOR DE ACORDES (mesmo de antes) ====================
+const NOTES_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const NOTES_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+
+function noteToIndex(letter, accidental) {
+  const name = letter + (accidental || "");
+  let idx = NOTES_SHARP.indexOf(name);
+  if (idx === -1) idx = NOTES_FLAT.indexOf(name);
+  return idx;
+}
+function transposeNoteName(letter, accidental, semitons, useFlats) {
+  const idx = noteToIndex(letter, accidental);
+  if (idx === -1) return letter + (accidental || "");
+  let newIdx = (idx + semitons) % 12;
+  if (newIdx < 0) newIdx += 12;
+  return (useFlats ? NOTES_FLAT : NOTES_SHARP)[newIdx];
+}
+const CHORD_REGEX = /^([A-G])(#|b)?((?:maj|min|sus|dim|aug|add)?\d{0,2}(?:m(?!aj))?[\d\w#\+\-]*)(\/([A-G])(#|b)?)?$/;
+function parseChord(token) {
+  const m = token.match(CHORD_REGEX);
+  if (!m) return null;
+  return { root: m[1], accidental: m[2] || "", suffix: m[3] || "", bassRoot: m[5] || null, bassAccidental: m[6] || "" };
+}
+function transposeChord(token, semitons, useFlats) {
+  const c = parseChord(token);
+  if (!c) return token;
+  const newRoot = transposeNoteName(c.root, c.accidental, semitons, useFlats);
+  let result = newRoot + c.suffix;
+  if (c.bassRoot) result += "/" + transposeNoteName(c.bassRoot, c.bassAccidental, semitons, useFlats);
+  return result;
+}
+
+const OPEN_SHAPES = {
+  "C": { frets: [-1, 3, 2, 0, 1, 0] }, "Cm": { frets: [-1, 3, 5, 5, 4, 3], base: 3, barre: true },
+  "C#": { frets: [-1, 4, 6, 6, 6, 4], base: 4, barre: true }, "Db": { frets: [-1, 4, 6, 6, 6, 4], base: 4, barre: true },
+  "D": { frets: [-1, -1, 0, 2, 3, 2] }, "Dm": { frets: [-1, -1, 0, 2, 3, 1] },
+  "D#": { frets: [-1, 6, 8, 8, 8, 6], base: 6, barre: true }, "Eb": { frets: [-1, 6, 8, 8, 8, 6], base: 6, barre: true },
+  "E": { frets: [0, 2, 2, 1, 0, 0] }, "Em": { frets: [0, 2, 2, 0, 0, 0] },
+  "F": { frets: [1, 3, 3, 2, 1, 1], barre: true }, "Fm": { frets: [1, 3, 3, 1, 1, 1], barre: true },
+  "F#": { frets: [2, 4, 4, 3, 2, 2], barre: true }, "Gb": { frets: [2, 4, 4, 3, 2, 2], barre: true },
+  "G": { frets: [3, 2, 0, 0, 0, 3] }, "Gm": { frets: [3, 5, 5, 3, 3, 3], base: 3, barre: true },
+  "G#": { frets: [4, 6, 6, 5, 4, 4], base: 4, barre: true }, "Ab": { frets: [4, 6, 6, 5, 4, 4], base: 4, barre: true },
+  "A": { frets: [-1, 0, 2, 2, 2, 0] }, "Am": { frets: [-1, 0, 2, 2, 1, 0] },
+  "A#": { frets: [-1, 1, 3, 3, 3, 1], barre: true }, "Bb": { frets: [-1, 1, 3, 3, 3, 1], barre: true },
+  "B": { frets: [-1, 2, 4, 4, 4, 2], barre: true }, "Bm": { frets: [-1, 2, 4, 4, 3, 2], barre: true },
+};
+function baseChordKey(token) {
+  const c = parseChord(token);
+  if (!c) return null;
+  const isMinor = /^m(?!aj)/.test(c.suffix);
+  return c.root + c.accidental + (isMinor ? "m" : "");
+}
+function getShape(token) {
+  const key = baseChordKey(token);
+  return key ? OPEN_SHAPES[key] : null;
+}
+
+function ChordDiagram({ chord }) {
+  const shape = getShape(chord);
+  const stringsX = [0, 1, 2, 3, 4, 5].map((i) => 10 + i * 16);
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, color: "#c9a227", fontFamily: "'Courier New', monospace" }}>{chord}</div>
+      <svg width="100" height="110" viewBox="0 0 100 110">
+        {stringsX.map((x, i) => <line key={i} x1={x} y1={20} x2={x} y2={92} stroke="#555" strokeWidth="1" />)}
+        {[0, 1, 2, 3, 4].map((i) => <line key={i} x1={10} y1={20 + i * 18} x2={90} y2={20 + i * 18} stroke="#555" strokeWidth={i === 0 ? 2.5 : 1} />)}
+        {shape ? (
+          <>
+            {shape.barre && <rect x={8} y={20 + 0.5 * 18 - 5} width={84} height={10} rx={5} fill="#8b0000" opacity={0.85} />}
+            {shape.frets.map((f, i) => {
+              const x = stringsX[i];
+              if (f === -1) return <text key={i} x={x} y={12} fontSize="10" textAnchor="middle" fill="#e8393a">×</text>;
+              if (f === 0) return <circle key={i} cx={x} cy={14} r="4" fill="none" stroke="#e8e0d0" strokeWidth="1.3" />;
+              const relativeFret = shape.base ? f - shape.base + 1 : f;
+              const y = 20 + (relativeFret - 0.5) * 18;
+              return <circle key={i} cx={x} cy={y} r="5" fill="#c9a227" />;
+            })}
+            {shape.base && <text x={95} y={35} fontSize="9" fill="#999">{shape.base}</text>}
+          </>
+        ) : <text x={50} y={55} fontSize="10" textAnchor="middle" fill="#666">sem shape</text>}
+      </svg>
+    </div>
+  );
+}
+
+// ==================== ESTILOS COMPARTILHADOS ====================
+const btnStyle = { padding: "9px 16px", border: "1px solid #8b0000", borderRadius: 2, background: "#1a0000", color: "#e8e0d0", cursor: "pointer", fontSize: 13, fontWeight: 700, letterSpacing: 1 };
+const secaoBtnStyle = { padding: "8px 14px", border: "1px solid #c9a227", borderRadius: 2, background: "#1a1500", color: "#c9a227", cursor: "pointer", fontSize: 12, fontWeight: 700, letterSpacing: 0.5 };
+const chipStyle = { padding: "7px 14px", border: "1px solid #333", borderRadius: 20, cursor: "pointer", fontSize: 12, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" };
+const sectionHeaderStyle = { fontSize: 18, fontWeight: 700, marginBottom: 12, color: "#c9a227", textTransform: "uppercase", letterSpacing: 2, borderBottom: "1px solid #333", paddingBottom: 6, fontStyle: "italic" };
+const barraStyle = { color: "#8b0000", fontSize: 24, fontWeight: 700 };
+const inputStyle = { padding: "9px 12px", background: "#161616", color: "#e8e0d0", border: "1px solid #333", borderRadius: 2, fontSize: 13 };
+
+function Cabecalho({ pagina, irPara }) {
+  const itens = [
+    ["inicio", "Início"], ["oficial", "Repertório Oficial"], ["comunidade", "Comunidade"], ["criar", "+ Criar Música"],
+  ];
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <h1 style={{ fontSize: 34, fontWeight: 700, textAlign: "center", letterSpacing: 3, textTransform: "uppercase", color: "#c9a227", textShadow: "2px 2px 0 #8b0000, -1px -1px 0 #000", fontStyle: "italic", marginBottom: 4 }}>
+        Mapa de Cifras
+      </h1>
+      <div style={{ height: 3, width: 120, background: "linear-gradient(90deg, transparent, #8b0000, transparent)", margin: "0 auto 20px" }} />
+      <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        {itens.map(([key, label]) => (
+          <button key={key} onClick={() => irPara(key)} style={{ ...btnStyle, borderColor: pagina === key ? "#c9a227" : "#8b0000", color: pagina === key ? "#c9a227" : "#e8e0d0" }}>
+            {label.toUpperCase()}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ListaMusicas({ titulo, musicas, carregando, abrirMusica }) {
+  return (
+    <div>
+      <h2 style={sectionHeaderStyle}>{titulo}</h2>
+      {carregando && <p style={{ color: "#666", fontSize: 13 }}>Carregando...</p>}
+      {!carregando && musicas.length === 0 && <p style={{ color: "#666", fontSize: 13, fontStyle: "italic" }}>Nenhuma música publicada aqui ainda.</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {musicas.map((m) => (
+          <button key={m.id} onClick={() => abrirMusica(m)} style={{ textAlign: "left", padding: "14px 18px", background: "#161616", border: "1px solid #2a2a2a", borderLeft: "3px solid #8b0000", color: "#e8e0d0", cursor: "pointer", borderRadius: 2 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, color: "#c9a227" }}>{m.title}</div>
+            <div style={{ fontSize: 12, color: "#999" }}>{m.author}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VisualizarMusica({ musica, voltar }) {
+  const [semitons, setSemitons] = useState(0);
+  const [useFlats, setUseFlats] = useState(false);
+  const secoes = musica.secoes;
+
+  const secoesTranspostas = useMemo(() => secoes.map((s) => ({
+    titulo: s.titulo,
+    compassos: s.compassos.map((compasso) => compasso.map((tok) => transposeChord(tok, semitons, useFlats))),
+  })), [secoes, semitons, useFlats]);
+
+  const acordesUnicos = useMemo(() => {
+    const set = [];
+    secoesTranspostas.forEach((s) => s.compassos.forEach((c) => c.forEach((n) => { if (!set.includes(n)) set.push(n); })));
+    return set;
+  }, [secoesTranspostas]);
+
+  const tomLabel = semitons === 0 ? "Tom original" : `${semitons > 0 ? "+" : ""}${semitons} semitom(ns)`;
+
+  return (
+    <div>
+      <button onClick={voltar} style={{ ...btnStyle, marginBottom: 20, borderColor: "#555" }}>← VOLTAR</button>
+      <h2 style={{ fontSize: 24, color: "#c9a227", fontStyle: "italic", marginBottom: 2 }}>{musica.title}</h2>
+      <p style={{ color: "#999", fontSize: 13, marginBottom: 20 }}>{musica.author}</p>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 28, padding: "14px 18px", background: "#161616", border: "1px solid #333", borderRadius: 2, flexWrap: "wrap" }}>
+        <button onClick={() => setSemitons((s) => s - 1)} style={btnStyle}>▼ DESCER</button>
+        <button onClick={() => setSemitons((s) => s + 1)} style={btnStyle}>▲ SUBIR</button>
+        <span style={{ fontWeight: 700, minWidth: 140, color: "#c9a227", letterSpacing: 1, fontSize: 13 }}>{tomLabel.toUpperCase()}</span>
+        <button onClick={() => setSemitons(0)} style={{ ...btnStyle, borderColor: "#555" }}>RESETAR</button>
+        <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "#999" }}>
+          <input type="checkbox" checked={useFlats} onChange={(e) => setUseFlats(e.target.checked)} /> Usar bemóis (b)
+        </label>
+      </div>
+
+      {secoesTranspostas.map((secao, i) => (
+        <div key={i} style={{ marginBottom: 20 }}>
+          {secao.titulo && (
+            <div style={{ display: "inline-block", fontSize: 12, fontWeight: 700, color: "#0a0a0a", background: "#8b0000", padding: "3px 14px", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1.5, clipPath: "polygon(4% 0, 100% 0, 96% 100%, 0% 100%)" }}>
+              {secao.titulo}
+            </div>
+          )}
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center" }}>
+            <span style={barraStyle}>|</span>
+            {secao.compassos.map((compasso, k) => (
+              <div key={k} style={{ display: "flex", alignItems: "center" }}>
+                <span style={{ fontFamily: "'Courier New', monospace", fontSize: 20, fontWeight: 700, letterSpacing: 2, color: "#e8e0d0", padding: "0 14px" }}>{compasso.join(" ")}</span>
+                <span style={barraStyle}>|</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      <h2 style={sectionHeaderStyle}>Mapa Musical</h2>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 20, padding: "16px", background: "#111", border: "1px solid #2a2a2a" }}>
+        {acordesUnicos.map((c, i) => <ChordDiagram key={i} chord={c} />)}
+      </div>
+    </div>
+  );
+}
+
+// ==================== EDITOR (criar nova música) ====================
+const NOTAS_TECLADO = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const QUALIDADES = [
+  { label: "maior", suffix: "" }, { label: "menor", suffix: "m" }, { label: "7", suffix: "7" },
+  { label: "m7", suffix: "m7" }, { label: "maj7", suffix: "maj7" }, { label: "sus4", suffix: "sus4" }, { label: "dim", suffix: "dim" },
+];
+const SECOES_PADRAO = ["Introdução", "Verso 1", "Verso 2", "Pré-Refrão", "Refrão", "Ponte", "Solo", "Final"];
+
+function CriarMusica({ voltar, aoPublicar }) {
+  const [titulo, setTitulo] = useState("");
+  const [autor, setAutor] = useState("");
+  const [categoria, setCategoria] = useState("comunidade");
+  const [pin, setPin] = useState("");
+  const [publicando, setPublicando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const [secoes, setSecoes] = useState([]);
+  const [qualidade, setQualidade] = useState("");
+  const [novoCompasso, setNovoCompasso] = useState(true);
+  const [nomeNovaSecao, setNomeNovaSecao] = useState("");
+  const [secaoAtivaIdx, setSecaoAtivaIdx] = useState(0);
+
+  const adicionarAcorde = (raiz) => {
+    const acorde = raiz + qualidade;
+    setSecoes((prev) => {
+      if (prev.length === 0) return prev;
+      const copy = prev.map((s) => ({ ...s, compassos: s.compassos.map((c) => [...c]) }));
+      const idx = Math.min(secaoAtivaIdx, copy.length - 1);
+      const alvo = copy[idx];
+      if (novoCompasso || alvo.compassos.length === 0) alvo.compassos.push([acorde]);
+      else alvo.compassos[alvo.compassos.length - 1].push(acorde);
+      return copy;
+    });
+    setNovoCompasso(true);
+  };
+  const desfazer = () => {
+    setSecoes((prev) => {
+      if (prev.length === 0) return prev;
+      const copy = prev.map((s) => ({ ...s, compassos: s.compassos.map((c) => [...c]) }));
+      const idx = Math.min(secaoAtivaIdx, copy.length - 1);
+      const alvo = copy[idx];
+      if (alvo.compassos.length === 0) return copy;
+      const ultimo = alvo.compassos[alvo.compassos.length - 1];
+      ultimo.pop();
+      if (ultimo.length === 0) alvo.compassos.pop();
+      return copy;
+    });
+  };
+  const removerAcordeEm = (secaoIdx, compassoIdx, acordeIdx) => {
+    setSecoes((prev) => {
+      const copy = prev.map((s) => ({ ...s, compassos: s.compassos.map((c) => [...c]) }));
+      const compasso = copy[secaoIdx].compassos[compassoIdx];
+      compasso.splice(acordeIdx, 1);
+      if (compasso.length === 0) copy[secaoIdx].compassos.splice(compassoIdx, 1);
+      return copy;
+    });
+  };
+  const removerSecao = (secaoIdx) => {
+    setSecoes((prev) => prev.filter((_, i) => i !== secaoIdx));
+    setSecaoAtivaIdx((idx) => Math.max(0, idx >= secaoIdx ? idx - 1 : idx));
+  };
+  const iniciarSecao = (nome) => {
+    if (!nome) return;
+    setSecoes((prev) => {
+      const novo = [...prev, { titulo: nome, compassos: [] }];
+      setSecaoAtivaIdx(novo.length - 1);
+      return novo;
+    });
+    setNomeNovaSecao("");
+    setNovoCompasso(true);
+  };
+
+  const publicar = async () => {
+    setErro("");
+    if (!titulo.trim() || !autor.trim()) { setErro("Preencha o título e o seu nome."); return; }
+    if (secoes.length === 0) { setErro("Adicione pelo menos um acorde antes de publicar."); return; }
+    if (categoria === "oficial" && pin !== PIN_OFICIAL) { setErro("PIN incorreto para publicar no Repertório Oficial."); return; }
+
+    setPublicando(true);
+    const { error } = await supabase.from("songs").insert({ title: titulo.trim(), author: autor.trim(), category: categoria, secoes });
+    setPublicando(false);
+    if (error) { setErro("Erro ao publicar: " + error.message); return; }
+    aoPublicar();
+  };
+
+  return (
+    <div>
+      <button onClick={voltar} style={{ ...btnStyle, marginBottom: 20, borderColor: "#555" }}>← VOLTAR</button>
+      <h2 style={sectionHeaderStyle}>Nova Música</h2>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        <input value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Título da música" style={{ ...inputStyle, flex: 2, minWidth: 200 }} />
+        <input value={autor} onChange={(e) => setAutor(e.target.value)} placeholder="Seu nome" style={{ ...inputStyle, flex: 1, minWidth: 150 }} />
+      </div>
+
+      <div style={{ display: "flex", gap: 20, marginBottom: 24, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ fontSize: 13, color: "#999", display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="radio" checked={categoria === "comunidade"} onChange={() => setCategoria("comunidade")} /> Publicar na Comunidade
+        </label>
+        <label style={{ fontSize: 13, color: "#999", display: "flex", alignItems: "center", gap: 6 }}>
+          <input type="radio" checked={categoria === "oficial"} onChange={() => setCategoria("oficial")} /> Publicar no Repertório Oficial
+        </label>
+        {categoria === "oficial" && (
+          <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="PIN" type="password" style={{ ...inputStyle, width: 100 }} />
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+        {QUALIDADES.map((q) => (
+          <button key={q.label} onClick={() => setQualidade(q.suffix)} style={{ ...chipStyle, background: qualidade === q.suffix ? "#8b0000" : "#161616", color: qualidade === q.suffix ? "#0a0a0a" : "#e8e0d0", borderColor: qualidade === q.suffix ? "#8b0000" : "#333" }}>
+            {q.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 8, marginBottom: 16, padding: 16, background: "#111", border: "1px solid #2a2a2a" }}>
+        {NOTAS_TECLADO.map((nota) => (
+          <button key={nota} onClick={() => adicionarAcorde(nota)} style={{ padding: "16px 0", border: "1px solid #444", background: "#1a1a1a", color: "#e8e0d0", fontFamily: "'Courier New', monospace", fontSize: 16, fontWeight: 700, cursor: "pointer", borderRadius: 2 }}>
+            {nota}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16, alignItems: "center" }}>
+        <button onClick={() => setNovoCompasso(false)} style={{ ...btnStyle, borderColor: novoCompasso ? "#8b0000" : "#c9a227", color: novoCompasso ? "#e8e0d0" : "#c9a227" }}>
+          {novoCompasso ? "PRÓXIMA NOTA = NOVO COMPASSO" : "PRÓXIMA NOTA JUNTA NO COMPASSO"}
+        </button>
+        <button onClick={desfazer} style={btnStyle}>⌫ DESFAZER</button>
+      </div>
+
+      {secoes.length > 0 && (
+        <p style={{ fontSize: 12, color: "#999", marginBottom: 16 }}>
+          Editando: <span style={{ color: "#c9a227", fontWeight: 700 }}>{secoes[Math.min(secaoAtivaIdx, secoes.length - 1)]?.titulo}</span> — clique no nome de outra seção pra editar ela, ou num acorde pra apagá-lo.
+        </p>
+      )}
+
+      <div style={{ marginBottom: 28 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+          {SECOES_PADRAO.map((nome) => <button key={nome} onClick={() => iniciarSecao(nome)} style={secaoBtnStyle}>+ {nome.toUpperCase()}</button>)}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input value={nomeNovaSecao} onChange={(e) => setNomeNovaSecao(e.target.value)} onKeyDown={(e) => e.key === "Enter" && iniciarSecao(nomeNovaSecao.trim())} placeholder="Ou digite o nome de uma seção personalizada" style={{ ...inputStyle, flex: 1 }} />
+          <button onClick={() => iniciarSecao(nomeNovaSecao.trim())} style={btnStyle}>+ ADICIONAR</button>
+        </div>
+      </div>
+
+      <h2 style={sectionHeaderStyle}>Sequência de Acordes</h2>
+      {secoes.length === 0 && <p style={{ color: "#666", fontSize: 13, fontStyle: "italic", marginBottom: 20 }}>Nenhum acorde ainda — comece criando uma seção e tocando uma nota.</p>}
+      {secoes.map((secao, i) => (
+        <div key={i} style={{ marginBottom: 20, padding: 8, border: i === secaoAtivaIdx ? "1px dashed #c9a227" : "1px solid transparent" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <button onClick={() => setSecaoAtivaIdx(i)} style={{ fontSize: 12, fontWeight: 700, color: "#0a0a0a", background: "#8b0000", padding: "3px 14px", border: "none", cursor: "pointer", textTransform: "uppercase", letterSpacing: 1.5, clipPath: "polygon(4% 0, 100% 0, 96% 100%, 0% 100%)" }}>
+              {secao.titulo}
+            </button>
+            <button onClick={() => removerSecao(i)} style={{ background: "none", border: "none", color: "#666", fontSize: 13, cursor: "pointer" }}>✕</button>
+          </div>
+          {secao.compassos.length === 0 ? <p style={{ color: "#555", fontSize: 12, fontStyle: "italic" }}>Sem acordes ainda.</p> : (
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center" }}>
+              <span style={barraStyle}>|</span>
+              {secao.compassos.map((compasso, k) => (
+                <div key={k} style={{ display: "flex", alignItems: "center" }}>
+                  <span style={{ padding: "0 8px", display: "flex", gap: 4 }}>
+                    {compasso.map((acorde, m) => (
+                      <button key={m} onClick={() => removerAcordeEm(i, k, m)} style={{ fontFamily: "'Courier New', monospace", fontSize: 20, fontWeight: 700, color: "#e8e0d0", background: "none", border: "none", cursor: "pointer" }}>{acorde}</button>
+                    ))}
+                  </span>
+                  <span style={barraStyle}>|</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {erro && <p style={{ color: "#e8393a", fontSize: 13, marginBottom: 12 }}>{erro}</p>}
+      <button onClick={publicar} disabled={publicando} style={{ ...btnStyle, background: "#8b0000", fontSize: 15, padding: "12px 24px" }}>
+        {publicando ? "PUBLICANDO..." : "PUBLICAR MÚSICA"}
+      </button>
+    </div>
+  );
+}
+
+// ==================== APP PRINCIPAL ====================
+function App() {
+  const [pagina, setPagina] = useState("inicio");
+  const [musicaAberta, setMusicaAberta] = useState(null);
+  const [oficiais, setOficiais] = useState([]);
+  const [comunidade, setComunidade] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+
+  const carregarMusicas = async () => {
+    setCarregando(true);
+    const { data, error } = await supabase.from("songs").select("*").order("created_at", { ascending: false });
+    if (!error && data) {
+      setOficiais(data.filter((m) => m.category === "oficial"));
+      setComunidade(data.filter((m) => m.category === "comunidade"));
+    }
+    setCarregando(false);
+  };
+
+  useEffect(() => { carregarMusicas(); }, []);
+
+  const irPara = (p) => { setMusicaAberta(null); setPagina(p); };
+  const abrirMusica = (m) => setMusicaAberta(m);
+
+  return (
+    <div style={{ maxWidth: 800, margin: "0 auto", padding: "32px 24px", fontFamily: "Georgia, 'Times New Roman', serif", background: "#0a0a0a", color: "#e8e0d0", minHeight: "100vh" }}>
+      <Cabecalho pagina={pagina} irPara={irPara} />
+
+      {musicaAberta ? (
+        <VisualizarMusica musica={musicaAberta} voltar={() => setMusicaAberta(null)} />
+      ) : pagina === "inicio" ? (
+        <div>
+          <ListaMusicas titulo="Repertório Oficial" musicas={oficiais.slice(0, 5)} carregando={carregando} abrirMusica={abrirMusica} />
+          <div style={{ height: 20 }} />
+          <ListaMusicas titulo="Comunidade" musicas={comunidade.slice(0, 5)} carregando={carregando} abrirMusica={abrirMusica} />
+        </div>
+      ) : pagina === "oficial" ? (
+        <ListaMusicas titulo="Repertório Oficial" musicas={oficiais} carregando={carregando} abrirMusica={abrirMusica} />
+      ) : pagina === "comunidade" ? (
+        <ListaMusicas titulo="Comunidade" musicas={comunidade} carregando={carregando} abrirMusica={abrirMusica} />
+      ) : (
+        <CriarMusica voltar={() => setPagina("inicio")} aoPublicar={() => { carregarMusicas(); setPagina("inicio"); }} />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
