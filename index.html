@@ -347,8 +347,8 @@ function criarMusicaHtml() {
       '</label>' +
       (ed.categoria === "oficial" ? '<input id="campo-pin" class="input" style="width:100px" type="password" placeholder="PIN" value="' + escapeHtml(ed.pin) + '" />' : "") +
     '</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center;margin-bottom:16px">' + chipsHtml +
-      '<label style="font-size:12px;color:#999;display:flex;align-items:center;gap:6px;margin-left:12px">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:14px 18px;background:#161616;border:1px solid #333;border-radius:2px">' + chipsHtml +
+      '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#999">' +
         '<input type="checkbox" data-action="toggle-flats-editor" ' + (ed.useFlats ? "checked" : "") + '/> Usar bemóis (b)' +
       '</label>' +
     '</div>' +
