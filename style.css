@@ -1,0 +1,32 @@
+* { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0a0a0a; font-family: Georgia, 'Times New Roman', serif; }
+  body { color: #e8e0d0; }
+  button { font-family: inherit; cursor: pointer; }
+  input { font-family: inherit; }
+  code { color: #c9a227; }
+  #root { max-width: 800px; margin: 0 auto; padding: 32px 24px; min-height: 100vh; }
+
+  .btn { padding: 9px 16px; border: 1px solid #8b0000; border-radius: 2px; background: #1a0000; color: #e8e0d0; font-size: 13px; font-weight: 700; letter-spacing: 1px; }
+  .btn.ativo { border-color: #c9a227; color: #c9a227; }
+  .btn.cinza { border-color: #555; }
+  .btn.grande { font-size: 15px; padding: 12px 24px; background: #8b0000; }
+  .btn-secao { padding: 8px 14px; border: 1px solid #c9a227; border-radius: 2px; background: #1a1500; color: #c9a227; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; }
+  .chip { padding: 7px 14px; border: 1px solid #333; border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; background: #161616; color: #e8e0d0; }
+  .chip.ativo { background: #8b0000; color: #0a0a0a; border-color: #8b0000; }
+  .input { padding: 9px 12px; background: #161616; color: #e8e0d0; border: 1px solid #333; border-radius: 2px; font-size: 13px; }
+
+  h1.titulo-app { font-size: 34px; font-weight: 700; text-align: center; letter-spacing: 3px; text-transform: uppercase; color: #c9a227; text-shadow: 2px 2px 0 #8b0000, -1px -1px 0 #000; font-style: italic; margin: 0 0 4px; }
+  .linha-decorativa { height: 3px; width: 120px; background: linear-gradient(90deg, transparent, #8b0000, transparent); margin: 0 auto 20px; }
+  .nav { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-bottom: 28px; }
+  h2.secao-header { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: #c9a227; text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid #333; padding-bottom: 6px; font-style: italic; }
+
+  .tag-secao { display: inline-block; font-size: 12px; font-weight: 700; color: #0a0a0a; background: #8b0000; padding: 3px 14px; border: none; text-transform: uppercase; letter-spacing: 1.5px; clip-path: polygon(4% 0, 100% 0, 96% 100%, 0% 100%); }
+  .barra { color: #8b0000; font-size: 24px; font-weight: 700; }
+  .acorde-btn { font-family: 'Courier New', monospace; font-size: 20px; font-weight: 700; color: #e8e0d0; background: none; border: none; padding: 2px 4px; }
+  .lista-musica-item { text-align: left; padding: 14px 18px; background: #161616; border: 1px solid #2a2a2a; border-left: 3px solid #8b0000; color: #e8e0d0; border-radius: 2px; width: 100%; display: block; }
+  .lista-musica-item .nome { font-weight: 700; font-size: 16px; color: #c9a227; }
+  .lista-musica-item .autor { font-size: 12px; color: #999; }
+
+  .erro-msg { color: #e8393a; font-size: 13px; margin-bottom: 12px; }
+  .aviso { font-size: 12px; color: #999; margin-bottom: 16px; }
+  .vazio { color: #666; font-size: 13px; font-style: italic; }
