@@ -91,3 +91,9 @@ function sharpToFlatLabel(nota) {
   const idx = NOTES_SHARP.indexOf(nota);
   return idx === -1 ? nota : NOTES_FLAT[idx];
 }
+
+// ==================== SÍMBOLOS (% repetição de acorde, xN repetição de trecho) ====================
+function isSimboloToken(token) {
+  if (token === "%") return true;
+  return /\d/.test(token) && /^[()xX\d\s]+$/.test(token);
+}

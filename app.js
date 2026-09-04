@@ -5,6 +5,7 @@ const QUALIDADES = [
   { label: "m7", suffix: "m7" }, { label: "maj7", suffix: "maj7" }, { label: "sus4", suffix: "sus4" }, { label: "dim", suffix: "dim" },
 ];
 const SECOES_PADRAO = ["Introdução","Verso 1","Verso 2","Pré-Refrão","Refrão","Ponte","Solo","Final"];
+const SIMBOLOS_RAPIDOS = ["%", "x2", "x3", "x4"];
 
 const state = {
   page: "inicio",
@@ -111,7 +112,7 @@ function visualizarMusicaHtml(musica) {
   const acordesUnicos = [];
   secoesTranspostas.forEach(function (s) {
     s.compassos.forEach(function (c) {
-      c.forEach(function (n) { if (acordesUnicos.indexOf(n) === -1) acordesUnicos.push(n); });
+      c.forEach(function (n) { if (!isSimboloToken(n) && acordesUnicos.indexOf(n) === -1) acordesUnicos.push(n); });
     });
   });
   const tomLabel = semitons === 0 ? "Tom original" : (semitons > 0 ? "+" : "") + semitons + " semitom(ns)";
@@ -120,7 +121,10 @@ function visualizarMusicaHtml(musica) {
   secoesTranspostas.forEach(function (secao) {
     let compassosHtml = '<span class="barra">|</span>';
     secao.compassos.forEach(function (compasso) {
-      compassosHtml += '<span style="font-family:\'Courier New\',monospace;font-size:20px;font-weight:700;letter-spacing:2px;color:#e8e0d0;padding:0 14px">' + compasso.join(" ") + '</span><span class="barra">|</span>';
+      const tokensHtml = compasso.map(function (tok) {
+        return isSimboloToken(tok) ? '<span class="token-simbolo">' + escapeHtml(tok) + '</span>' : escapeHtml(tok);
+      }).join(" ");
+      compassosHtml += '<span style="font-family:\'Courier New\',monospace;font-size:20px;font-weight:700;letter-spacing:2px;color:#e8e0d0;padding:0 14px">' + tokensHtml + '</span><span class="barra">|</span>';
     });
     secoesHtml += '<div style="margin-bottom:20px">' +
       (secao.titulo ? '<div class="tag-secao" style="margin-bottom:8px">' + escapeHtml(secao.titulo) + '</div>' : "") +
@@ -163,6 +167,11 @@ function criarMusicaHtml() {
     teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#e8e0d0;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + label + '</button>';
   });
 
+  let simbolosHtml = "";
+  SIMBOLOS_RAPIDOS.forEach(function (s) {
+    simbolosHtml += '<button class="btn-secao" data-action="simbolo" data-simbolo="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
+  });
+
   let secoesPadraoHtml = "";
   SECOES_PADRAO.forEach(function (nome) {
     secoesPadraoHtml += '<button class="btn-secao" data-action="nova-secao" data-nome="' + escapeHtml(nome) + '">+ ' + nome.toUpperCase() + '</button>';
@@ -181,7 +190,8 @@ function criarMusicaHtml() {
         secao.compassos.forEach(function (compasso, k) {
           compassosHtml += '<span style="padding:0 8px;display:flex;gap:4px">';
           compasso.forEach(function (acorde, m) {
-            compassosHtml += '<button class="acorde-btn" data-action="remover-acorde" data-secao="' + i + '" data-compasso="' + k + '" data-acorde="' + m + '">' + escapeHtml(acorde) + '</button>';
+            const classeExtra = isSimboloToken(acorde) ? " simbolo" : "";
+            compassosHtml += '<button class="acorde-btn' + classeExtra + '" data-action="remover-acorde" data-secao="' + i + '" data-compasso="' + k + '" data-acorde="' + m + '">' + escapeHtml(acorde) + '</button>';
           });
           compassosHtml += '</span><span class="barra">|</span>';
         });
@@ -219,6 +229,14 @@ function criarMusicaHtml() {
       '</label>' +
     '</div>' +
     '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;padding:16px;background:#111;border:1px solid #2a2a2a">' + teclasHtml + '</div>' +
+    '<div style="margin-bottom:16px">' +
+      '<p class="aviso" style="margin-bottom:8px">Símbolos: <code>%</code> repete o acorde/compasso anterior · <code>xN</code> indica repetição do trecho</p>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' + simbolosHtml + '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<input id="campo-simbolo-custom" class="input" style="width:160px" placeholder="Outro (ex: x8)" />' +
+        '<button class="btn" data-action="simbolo-custom">+ ADICIONAR SÍMBOLO</button>' +
+      '</div>' +
+    '</div>' +
     '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">' +
       '<button class="btn ' + (ed.novoCompasso ? "" : "ativo") + '" data-action="toggle-compasso">' + (ed.novoCompasso ? "PRÓXIMA NOTA = NOVO COMPASSO" : "PRÓXIMA NOTA JUNTA NO COMPASSO") + '</button>' +
       '<button class="btn" data-action="desfazer">⌫ DESFAZER</button>' +
@@ -237,16 +255,22 @@ function criarMusicaHtml() {
 }
 
 // ==================== AÇÕES DO EDITOR ====================
+function adicionarToken(token) {
+  const ed = state.editor;
+  if (!token || ed.secoes.length === 0) return;
+  const idx = Math.min(ed.secaoAtivaIdx, ed.secoes.length - 1);
+  const alvo = ed.secoes[idx];
+  if (ed.novoCompasso || alvo.compassos.length === 0) alvo.compassos.push([token]);
+  else alvo.compassos[alvo.compassos.length - 1].push(token);
+  ed.novoCompasso = true;
+}
 function adicionarAcorde(raiz) {
   const ed = state.editor;
   const raizExibida = ed.useFlats ? sharpToFlatLabel(raiz) : raiz;
-  const acorde = raizExibida + ed.qualidade;
-  if (ed.secoes.length === 0) return;
-  const idx = Math.min(ed.secaoAtivaIdx, ed.secoes.length - 1);
-  const alvo = ed.secoes[idx];
-  if (ed.novoCompasso || alvo.compassos.length === 0) alvo.compassos.push([acorde]);
-  else alvo.compassos[alvo.compassos.length - 1].push(acorde);
-  ed.novoCompasso = true;
+  adicionarToken(raizExibida + ed.qualidade);
+}
+function adicionarSimbolo(simbolo) {
+  adicionarToken(simbolo);
 }
 function desfazer() {
   const ed = state.editor;
@@ -322,6 +346,12 @@ function bindEvents() {
     if (action === "toggle-flats-editor") el.addEventListener("change", function () { state.editor.useFlats = el.checked; render(); });
     if (action === "qualidade") el.addEventListener("click", function () { state.editor.qualidade = el.dataset.suffix; render(); });
     if (action === "nota") el.addEventListener("click", function () { adicionarAcorde(el.dataset.nota); render(); });
+    if (action === "simbolo") el.addEventListener("click", function () { adicionarSimbolo(el.dataset.simbolo); render(); });
+    if (action === "simbolo-custom") el.addEventListener("click", function () {
+      const campo = document.getElementById("campo-simbolo-custom");
+      adicionarSimbolo(campo ? campo.value.trim() : "");
+      render();
+    });
     if (action === "toggle-compasso") el.addEventListener("click", function () { state.editor.novoCompasso = false; render(); });
     if (action === "desfazer") el.addEventListener("click", function () { desfazer(); render(); });
     if (action === "nova-secao") el.addEventListener("click", function () { iniciarSecao(el.dataset.nome); render(); });
