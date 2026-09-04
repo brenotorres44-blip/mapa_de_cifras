@@ -122,7 +122,7 @@ function visualizarMusicaHtml(musica) {
     let compassosHtml = '<span class="barra">|</span>';
     secao.compassos.forEach(function (compasso) {
       const tokensHtml = compasso.map(function (tok) {
-        return isSimboloToken(tok) ? '<span class="token-simbolo">' + escapeHtml(tok) + '</span>' : escapeHtml(tok);
+        return isSimboloToken(tok) ? '<span class="token-simbolo">' + simboloTokenHtml(tok, 20) + '</span>' : escapeHtml(tok);
       }).join(" ");
       compassosHtml += '<span style="font-family:\'Courier New\',monospace;font-size:20px;font-weight:700;letter-spacing:2px;color:#e8e0d0;padding:0 14px">' + tokensHtml + '</span><span class="barra">|</span>';
     });
@@ -166,7 +166,7 @@ function criarMusicaHtml() {
     const label = ed.useFlats ? sharpToFlatLabel(nota) : nota;
     teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#e8e0d0;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + label + '</button>';
   });
-  teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#c9a227;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;font-style:italic;border-radius:2px" data-action="simbolo" data-simbolo="%">%</button>';
+  teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#c9a227;display:flex;align-items:center;justify-content:center;border-radius:2px" data-action="simbolo" data-simbolo="%" title="% — repete o acorde/compasso anterior">' + percentIconSVG(22) + '</button>';
 
   let simbolosHtml = "";
   SIMBOLOS_RAPIDOS.forEach(function (s) {
@@ -192,7 +192,7 @@ function criarMusicaHtml() {
           compassosHtml += '<span style="padding:0 8px;display:flex;gap:4px">';
           compasso.forEach(function (acorde, m) {
             const classeExtra = isSimboloToken(acorde) ? " simbolo" : "";
-            compassosHtml += '<button class="acorde-btn' + classeExtra + '" data-action="remover-acorde" data-secao="' + i + '" data-compasso="' + k + '" data-acorde="' + m + '">' + escapeHtml(acorde) + '</button>';
+            compassosHtml += '<button class="acorde-btn' + classeExtra + '" data-action="remover-acorde" data-secao="' + i + '" data-compasso="' + k + '" data-acorde="' + m + '">' + simboloTokenHtml(acorde, 18) + '</button>';
           });
           compassosHtml += '</span><span class="barra">|</span>';
         });
