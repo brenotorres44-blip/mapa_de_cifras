@@ -97,3 +97,18 @@ function isSimboloToken(token) {
   if (token === "%") return true;
   return /\d/.test(token) && /^[()xX\d\s]+$/.test(token);
 }
+
+// Desenha o "%" como ícone (dois círculos + traço) em vez de depender do
+// glifo da fonte, que fica torto/pouco legível em itálico monoespaçado.
+function percentIconSVG(sizePx) {
+  const s = sizePx || 20;
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" style="vertical-align:middle" xmlns="http://www.w3.org/2000/svg">' +
+    '<circle cx="6.5" cy="6.5" r="3.2" fill="currentColor" />' +
+    '<circle cx="17.5" cy="17.5" r="3.2" fill="currentColor" />' +
+    '<line x1="19" y1="5" x2="5" y2="19" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />' +
+  '</svg>';
+}
+function simboloTokenHtml(token, sizePx) {
+  if (token === "%") return percentIconSVG(sizePx);
+  return escapeHtml(token);
+}
