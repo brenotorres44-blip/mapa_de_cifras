@@ -5,7 +5,7 @@ const QUALIDADES = [
   { label: "m7", suffix: "m7" }, { label: "maj7", suffix: "maj7" }, { label: "sus4", suffix: "sus4" }, { label: "dim", suffix: "dim" },
 ];
 const SECOES_PADRAO = ["Introdução","Verso 1","Verso 2","Pré-Refrão","Refrão","Ponte","Solo","Final"];
-const SIMBOLOS_RAPIDOS = ["%", "x2", "x3", "x4"];
+const SIMBOLOS_RAPIDOS = ["x2", "x3", "x4"];
 
 const state = {
   page: "inicio",
@@ -166,10 +166,11 @@ function criarMusicaHtml() {
     const label = ed.useFlats ? sharpToFlatLabel(nota) : nota;
     teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#e8e0d0;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + label + '</button>';
   });
+  teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#c9a227;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;font-style:italic;border-radius:2px" data-action="simbolo" data-simbolo="%">%</button>';
 
   let simbolosHtml = "";
   SIMBOLOS_RAPIDOS.forEach(function (s) {
-    simbolosHtml += '<button class="btn-secao" data-action="simbolo" data-simbolo="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
+    simbolosHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#c9a227;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;font-style:italic;border-radius:2px" data-action="simbolo" data-simbolo="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
   });
 
   let secoesPadraoHtml = "";
@@ -231,7 +232,7 @@ function criarMusicaHtml() {
     '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;padding:16px;background:#111;border:1px solid #2a2a2a">' + teclasHtml + '</div>' +
     '<div style="margin-bottom:16px">' +
       '<p class="aviso" style="margin-bottom:8px">Símbolos: <code>%</code> repete o acorde/compasso anterior · <code>xN</code> indica repetição do trecho</p>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' + simbolosHtml + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:10px;padding:16px;background:#111;border:1px solid #2a2a2a">' + simbolosHtml + '</div>' +
       '<div style="display:flex;gap:8px">' +
         '<input id="campo-simbolo-custom" class="input" style="width:160px" placeholder="Outro (ex: x8)" />' +
         '<button class="btn" data-action="simbolo-custom">+ ADICIONAR SÍMBOLO</button>' +
