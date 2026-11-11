@@ -217,7 +217,7 @@ function visualizarMusicaHtml(musica) {
   let diagramasHtml = "";
   acordesUnicos.forEach(function (c) { diagramasHtml += chordDiagramSVG(c); });
 
-  const podeEditar = state.usuario && musica.user_id === state.usuario.id;
+  const podeEditar = !musica.user_id || (state.usuario && musica.user_id === state.usuario.id);
   return '<button class="btn cinza" data-action="voltar" style="margin-bottom:20px">← VOLTAR</button>' +
     (podeEditar ? '<button class="btn" data-action="editar-musica" data-id="' + musica.id + '" style="margin-bottom:20px;margin-left:8px">✎ EDITAR</button>' : '') +
     '<h2 style="font-size:24px;color:var(--accent-gold);font-style:italic;margin-bottom:2px">' + escapeHtml(musica.title) + '</h2>' +
@@ -238,13 +238,6 @@ function visualizarMusicaHtml(musica) {
 
 function criarMusicaHtml() {
   const ed = state.editor;
-
-  if (!state.usuario) {
-    return '<button class="btn cinza" data-action="voltar-inicio" style="margin-bottom:20px">← VOLTAR</button>' +
-      '<h2 class="secao-header">Nova Música</h2>' +
-      '<p class="vazio" style="margin-bottom:16px">Você precisa entrar (ou criar uma conta) pra criar e publicar músicas.</p>' +
-      '<button class="btn" data-action="ir" data-page="login">ENTRAR / CRIAR CONTA</button>';
-  }
 
   let chipsHtml = "";
   QUALIDADES.forEach(function (q) {
@@ -383,11 +376,11 @@ function publicar() {
   if (!ed.titulo.trim() || !ed.autor.trim()) { ed.erro = "Preencha o título e o seu nome."; render(); return; }
   if (ed.secoes.length === 0) { ed.erro = "Adicione pelo menos um acorde antes de publicar."; render(); return; }
   if (ed.categoria === "oficial" && ed.pin !== PIN_OFICIAL) { ed.erro = "PIN incorreto para publicar no Repertório Oficial."; render(); return; }
-  if (!state.usuario) { ed.erro = "Você precisa estar logado pra publicar."; render(); return; }
 
   ed.publicando = true;
   render();
-  const dados = { title: ed.titulo.trim(), author: ed.autor.trim(), category: ed.categoria, secoes: ed.secoes, user_id: state.usuario.id };
+  const dados = { title: ed.titulo.trim(), author: ed.autor.trim(), category: ed.categoria, secoes: ed.secoes };
+  if (state.usuario) dados.user_id = state.usuario.id;
   const operacao = ed.editandoId
     ? supabaseClient.from("songs").update(dados).eq("id", ed.editandoId)
     : supabaseClient.from("songs").insert(dados);
