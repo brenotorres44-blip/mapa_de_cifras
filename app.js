@@ -5,7 +5,6 @@ const QUALIDADES = [
   { label: "m7", suffix: "m7" }, { label: "maj7", suffix: "maj7" }, { label: "sus4", suffix: "sus4" }, { label: "dim", suffix: "dim" },
 ];
 const SECOES_PADRAO = ["Introdução","Verso 1","Verso 2","Pré-Refrão","Refrão","Ponte","Solo","Final"];
-const SIMBOLOS_RAPIDOS = ["x2", "x3", "x4"];
 
 const state = {
   page: "inicio",
@@ -13,6 +12,10 @@ const state = {
   oficiais: [],
   comunidade: [],
   carregando: true,
+  tema: localStorage.getItem("mapaCifrasTema") || "escuro",
+  usuario: null,
+  loginErro: "",
+  loginCarregando: false,
   viewer: { semitons: 0, useFlats: false },
   editor: {
     titulo: "", autor: "", categoria: "comunidade", pin: "",
@@ -54,8 +57,56 @@ function carregarMusicas() {
 function root() { return document.getElementById("root"); }
 
 function render() {
+  document.body.className = state.tema === "claro" ? "tema-claro" : "";
   root().innerHTML = cabecalhoHtml() + '<div id="conteudo">' + conteudoHtml() + '</div>';
   bindEvents();
+}
+
+function alternarTema() {
+  state.tema = state.tema === "claro" ? "escuro" : "claro";
+  localStorage.setItem("mapaCifrasTema", state.tema);
+  render();
+}
+
+function sair() {
+  supabaseClient.auth.signOut().then(function () { state.usuario = null; render(); });
+}
+function entrar(email, senha) {
+  state.loginErro = "";
+  state.loginCarregando = true;
+  render();
+  supabaseClient.auth.signInWithPassword({ email: email, password: senha }).then(function (res) {
+    state.loginCarregando = false;
+    if (res.error) { state.loginErro = "Erro ao entrar: " + res.error.message; render(); return; }
+    state.page = "inicio";
+    render();
+  });
+}
+function criarConta(email, senha) {
+  state.loginErro = "";
+  state.loginCarregando = true;
+  render();
+  supabaseClient.auth.signUp({ email: email, password: senha }).then(function (res) {
+    state.loginCarregando = false;
+    if (res.error) { state.loginErro = "Erro ao criar conta: " + res.error.message; render(); return; }
+    if (res.data.session) { state.page = "inicio"; }
+    else { state.loginErro = "Conta criada! Confira seu e-mail pra confirmar antes de entrar."; }
+    render();
+  });
+}
+function iniciarAuth() {
+  supabaseClient.auth.getSession().then(function (res) {
+    state.usuario = res.data.session ? res.data.session.user : null;
+    render();
+  });
+  supabaseClient.auth.onAuthStateChange(function (event, session) {
+    state.usuario = session ? session.user : null;
+    if (state.usuario && !state.editor.autor) {
+      const nome = state.usuario.user_metadata && state.usuario.user_metadata.full_name ? state.usuario.user_metadata.full_name : state.usuario.email;
+      state.editor.autor = nome;
+    }
+    render();
+  });
 }
 
 function cabecalhoHtml() {
@@ -65,13 +116,32 @@ function cabecalhoHtml() {
     const key = item[0], label = item[1];
     botoes += '<button class="btn ' + (state.page===key?"ativo":"") + '" data-action="ir" data-page="' + key + '">' + label.toUpperCase() + '</button>';
   });
+
+  let usuarioHtml;
+  if (state.usuario) {
+    const nome = state.usuario.user_metadata && state.usuario.user_metadata.full_name ? state.usuario.user_metadata.full_name : state.usuario.email;
+    const foto = state.usuario.user_metadata && state.usuario.user_metadata.avatar_url ? state.usuario.user_metadata.avatar_url : "";
+    usuarioHtml = '<div class="usuario-caixa">' +
+      (foto ? '<img class="usuario-avatar" src="' + foto + '" />' : "") +
+      '<span>' + escapeHtml(nome) + '</span>' +
+      '<button class="btn cinza" data-action="logout" style="padding:4px 10px;font-size:11px">SAIR</button>' +
+    '</div>';
+  } else {
+    usuarioHtml = '<button class="btn" data-action="ir" data-page="login" style="padding:6px 12px;font-size:12px">ENTRAR / CRIAR CONTA</button>';
+  }
+
   return '<h1 class="titulo-app">Mapa de Cifras</h1>' +
     '<div class="linha-decorativa"></div>' +
+    '<div class="barra-topo">' +
+      usuarioHtml +
+      '<button class="btn cinza" data-action="toggle-tema" style="padding:6px 12px;font-size:12px">' + (state.tema === "claro" ? "🌙 TEMA ESCURO" : "☀ TEMA CLARO") + '</button>' +
+    '</div>' +
     '<div class="nav">' + botoes + '</div>';
 }
 
 function conteudoHtml() {
   if (state.musicaAberta) return visualizarMusicaHtml(state.musicaAberta);
+  if (state.page === "login") return loginHtml();
   if (state.page === "inicio") {
     return listaMusicasHtml("Repertório Oficial", state.oficiais.slice(0,5)) + "<div style='height:20px'></div>" + listaMusicasHtml("Comunidade", state.comunidade.slice(0,5));
   }
@@ -79,6 +149,21 @@ function conteudoHtml() {
   if (state.page === "comunidade") return listaMusicasHtml("Comunidade", state.comunidade);
   if (state.page === "criar") return criarMusicaHtml();
   return "";
+}
+
+function loginHtml() {
+  return '<button class="btn cinza" data-action="voltar-inicio" style="margin-bottom:20px">← VOLTAR</button>' +
+    '<h2 class="secao-header">Entrar ou Criar Conta</h2>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;max-width:320px;margin-bottom:16px">' +
+      '<input id="login-email" class="input" type="email" placeholder="seu@email.com" />' +
+      '<input id="login-senha" class="input" type="password" placeholder="Senha (mínimo 6 caracteres)" />' +
+    '</div>' +
+    (state.loginErro ? '<p class="erro-msg">' + escapeHtml(state.loginErro) + '</p>' : "") +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+      '<button class="btn grande" data-action="fazer-login" ' + (state.loginCarregando ? "disabled" : "") + '>' + (state.loginCarregando ? "AGUARDE..." : "ENTRAR") + '</button>' +
+      '<button class="btn cinza" data-action="fazer-cadastro" ' + (state.loginCarregando ? "disabled" : "") + '>CRIAR CONTA NOVA</button>' +
+    '</div>' +
+    '<p class="aviso" style="margin-top:16px">Já tem uma música publicada antes do login existir? Ela não vai ter dono — pra poder editar, republique-a logado.</p>';
 }
 
 function listaMusicasHtml(titulo, musicas) {
@@ -112,7 +197,7 @@ function visualizarMusicaHtml(musica) {
   const acordesUnicos = [];
   secoesTranspostas.forEach(function (s) {
     s.compassos.forEach(function (c) {
-      c.forEach(function (n) { if (!isSimboloToken(n) && acordesUnicos.indexOf(n) === -1) acordesUnicos.push(n); });
+      c.forEach(function (n) { if (acordesUnicos.indexOf(n) === -1) acordesUnicos.push(n); });
     });
   });
   const tomLabel = semitons === 0 ? "Tom original" : (semitons > 0 ? "+" : "") + semitons + " semitom(ns)";
@@ -121,10 +206,7 @@ function visualizarMusicaHtml(musica) {
   secoesTranspostas.forEach(function (secao) {
     let compassosHtml = '<span class="barra">|</span>';
     secao.compassos.forEach(function (compasso) {
-      const tokensHtml = compasso.map(function (tok) {
-        return isSimboloToken(tok) ? '<span class="token-simbolo">' + simboloTokenHtml(tok, 20) + '</span>' : escapeHtml(tok);
-      }).join(" ");
-      compassosHtml += '<span style="font-family:\'Courier New\',monospace;font-size:20px;font-weight:700;letter-spacing:2px;color:#e8e0d0;padding:0 14px">' + tokensHtml + '</span><span class="barra">|</span>';
+      compassosHtml += '<span style="font-family:\'Courier New\',monospace;font-size:20px;font-weight:700;letter-spacing:2px;color:var(--text);padding:0 14px">' + compasso.join(" ") + '</span><span class="barra">|</span>';
     });
     secoesHtml += '<div style="margin-bottom:20px">' +
       (secao.titulo ? '<div class="tag-secao" style="margin-bottom:8px">' + escapeHtml(secao.titulo) + '</div>' : "") +
@@ -135,26 +217,34 @@ function visualizarMusicaHtml(musica) {
   let diagramasHtml = "";
   acordesUnicos.forEach(function (c) { diagramasHtml += chordDiagramSVG(c); });
 
+  const podeEditar = state.usuario && musica.user_id === state.usuario.id;
   return '<button class="btn cinza" data-action="voltar" style="margin-bottom:20px">← VOLTAR</button>' +
-    '<button class="btn" data-action="editar-musica" data-id="' + musica.id + '" style="margin-bottom:20px;margin-left:8px">✎ EDITAR</button>' +
-    '<h2 style="font-size:24px;color:#c9a227;font-style:italic;margin-bottom:2px">' + escapeHtml(musica.title) + '</h2>' +
-    '<p style="color:#999;font-size:13px;margin-bottom:20px">' + escapeHtml(musica.author) + '</p>' +
-    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;padding:14px 18px;background:#161616;border:1px solid #333;border-radius:2px;flex-wrap:wrap">' +
+    (podeEditar ? '<button class="btn" data-action="editar-musica" data-id="' + musica.id + '" style="margin-bottom:20px;margin-left:8px">✎ EDITAR</button>' : '') +
+    '<h2 style="font-size:24px;color:var(--accent-gold);font-style:italic;margin-bottom:2px">' + escapeHtml(musica.title) + '</h2>' +
+    '<p style="color:var(--text-dim);font-size:13px;margin-bottom:20px">' + escapeHtml(musica.author) + '</p>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:28px;padding:14px 18px;background:var(--bg-panel);border:1px solid var(--border);border-radius:2px;flex-wrap:wrap">' +
       '<button class="btn" data-action="transpor" data-delta="-1">▼ DESCER</button>' +
       '<button class="btn" data-action="transpor" data-delta="1">▲ SUBIR</button>' +
-      '<span style="font-weight:700;min-width:140px;color:#c9a227;letter-spacing:1px;font-size:13px">' + tomLabel.toUpperCase() + '</span>' +
+      '<span style="font-weight:700;min-width:140px;color:var(--accent-gold);letter-spacing:1px;font-size:13px">' + tomLabel.toUpperCase() + '</span>' +
       '<button class="btn cinza" data-action="resetar-tom">RESETAR</button>' +
-      '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#999">' +
+      '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim)">' +
         '<input type="checkbox" data-action="toggle-flats" ' + (useFlats ? "checked" : "") + '/> Usar bemóis (b)' +
       '</label>' +
     '</div>' +
     secoesHtml +
     '<h2 class="secao-header">Mapa Musical</h2>' +
-    '<div style="display:flex;flex-wrap:wrap;gap:20px;padding:16px;background:#111;border:1px solid #2a2a2a">' + diagramasHtml + '</div>';
+    '<div style="display:flex;flex-wrap:wrap;gap:20px;padding:16px;background:var(--bg-panel2);border:1px solid var(--border2)">' + diagramasHtml + '</div>';
 }
 
 function criarMusicaHtml() {
   const ed = state.editor;
+
+  if (!state.usuario) {
+    return '<button class="btn cinza" data-action="voltar-inicio" style="margin-bottom:20px">← VOLTAR</button>' +
+      '<h2 class="secao-header">Nova Música</h2>' +
+      '<p class="vazio" style="margin-bottom:16px">Você precisa entrar (ou criar uma conta) pra criar e publicar músicas.</p>' +
+      '<button class="btn" data-action="ir" data-page="login">ENTRAR / CRIAR CONTA</button>';
+  }
 
   let chipsHtml = "";
   QUALIDADES.forEach(function (q) {
@@ -164,13 +254,7 @@ function criarMusicaHtml() {
   let teclasHtml = "";
   NOTAS_TECLADO.forEach(function (nota) {
     const label = ed.useFlats ? sharpToFlatLabel(nota) : nota;
-    teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#e8e0d0;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + label + '</button>';
-  });
-  teclasHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#c9a227;display:flex;align-items:center;justify-content:center;border-radius:2px" data-action="simbolo" data-simbolo="%" title="% — repete o acorde/compasso anterior">' + percentIconSVG(22) + '</button>';
-
-  let simbolosHtml = "";
-  SIMBOLOS_RAPIDOS.forEach(function (s) {
-    simbolosHtml += '<button style="padding:16px 0;border:1px solid #444;background:#1a1a1a;color:#c9a227;font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;font-style:italic;border-radius:2px" data-action="simbolo" data-simbolo="' + escapeHtml(s) + '">' + escapeHtml(s) + '</button>';
+    teclasHtml += '<button style="padding:16px 0;border:1px solid var(--border);background:var(--bg-panel);color:var(--text);font-family:\'Courier New\',monospace;font-size:16px;font-weight:700;border-radius:2px" data-action="nota" data-nota="' + nota + '">' + label + '</button>';
   });
 
   let secoesPadraoHtml = "";
@@ -191,8 +275,7 @@ function criarMusicaHtml() {
         secao.compassos.forEach(function (compasso, k) {
           compassosHtml += '<span style="padding:0 8px;display:flex;gap:4px">';
           compasso.forEach(function (acorde, m) {
-            const classeExtra = isSimboloToken(acorde) ? " simbolo" : "";
-            compassosHtml += '<button class="acorde-btn' + classeExtra + '" data-action="remover-acorde" data-secao="' + i + '" data-compasso="' + k + '" data-acorde="' + m + '">' + simboloTokenHtml(acorde, 18) + '</button>';
+            compassosHtml += '<button class="acorde-btn" data-action="remover-acorde" data-secao="' + i + '" data-compasso="' + k + '" data-acorde="' + m + '">' + escapeHtml(acorde) + '</button>';
           });
           compassosHtml += '</span><span class="barra">|</span>';
         });
@@ -216,33 +299,25 @@ function criarMusicaHtml() {
       '<input id="campo-autor" class="input" style="flex:1;min-width:150px" placeholder="Seu nome" value="' + escapeHtml(ed.autor) + '" />' +
     '</div>' +
     '<div style="display:flex;gap:20px;margin-bottom:24px;align-items:center;flex-wrap:wrap">' +
-      '<label style="font-size:13px;color:#999;display:flex;align-items:center;gap:6px">' +
+      '<label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">' +
         '<input type="radio" name="categoria" data-action="categoria" value="comunidade" ' + (ed.categoria==="comunidade"?"checked":"") + '/> Publicar na Comunidade' +
       '</label>' +
-      '<label style="font-size:13px;color:#999;display:flex;align-items:center;gap:6px">' +
+      '<label style="font-size:13px;color:var(--text-dim);display:flex;align-items:center;gap:6px">' +
         '<input type="radio" name="categoria" data-action="categoria" value="oficial" ' + (ed.categoria==="oficial"?"checked":"") + '/> Publicar no Repertório Oficial' +
       '</label>' +
       (ed.categoria === "oficial" ? '<input id="campo-pin" class="input" style="width:100px" type="password" placeholder="PIN" value="' + escapeHtml(ed.pin) + '" />' : "") +
     '</div>' +
-    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:14px 18px;background:#161616;border:1px solid #333;border-radius:2px">' + chipsHtml +
-      '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:#999">' +
+    '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;padding:14px 18px;background:var(--bg-panel);border:1px solid var(--border);border-radius:2px">' + chipsHtml +
+      '<label style="margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim)">' +
         '<input type="checkbox" data-action="toggle-flats-editor" ' + (ed.useFlats ? "checked" : "") + '/> Usar bemóis (b)' +
       '</label>' +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;padding:16px;background:#111;border:1px solid #2a2a2a">' + teclasHtml + '</div>' +
-    '<div style="margin-bottom:16px">' +
-      '<p class="aviso" style="margin-bottom:8px">Símbolos: <code>%</code> repete o acorde/compasso anterior · <code>xN</code> indica repetição do trecho</p>' +
-      '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:10px;padding:16px;background:#111;border:1px solid #2a2a2a">' + simbolosHtml + '</div>' +
-      '<div style="display:flex;gap:8px">' +
-        '<input id="campo-simbolo-custom" class="input" style="width:160px" placeholder="Outro (ex: x8)" />' +
-        '<button class="btn" data-action="simbolo-custom">+ ADICIONAR SÍMBOLO</button>' +
-      '</div>' +
-    '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:16px;padding:16px;background:var(--bg-panel2);border:1px solid var(--border2)">' + teclasHtml + '</div>' +
     '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center">' +
       '<button class="btn ' + (ed.novoCompasso ? "" : "ativo") + '" data-action="toggle-compasso">' + (ed.novoCompasso ? "PRÓXIMA NOTA = NOVO COMPASSO" : "PRÓXIMA NOTA JUNTA NO COMPASSO") + '</button>' +
       '<button class="btn" data-action="desfazer">⌫ DESFAZER</button>' +
     '</div>' +
-    (ed.secoes.length > 0 ? '<p class="aviso">Editando: <span style="color:#c9a227;font-weight:700">' + escapeHtml(secaoAtivaTitulo) + '</span> — clique no nome de outra seção pra editar ela, ou num acorde pra apagá-lo.</p>' : "") +
+    (ed.secoes.length > 0 ? '<p class="aviso">Editando: <span style="color:var(--accent-gold);font-weight:700">' + escapeHtml(secaoAtivaTitulo) + '</span> — clique no nome de outra seção pra editar ela, ou num acorde pra apagá-lo.</p>' : "") +
     '<div style="margin-bottom:28px">' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">' + secoesPadraoHtml + '</div>' +
       '<div style="display:flex;gap:8px">' +
@@ -256,22 +331,16 @@ function criarMusicaHtml() {
 }
 
 // ==================== AÇÕES DO EDITOR ====================
-function adicionarToken(token) {
-  const ed = state.editor;
-  if (!token || ed.secoes.length === 0) return;
-  const idx = Math.min(ed.secaoAtivaIdx, ed.secoes.length - 1);
-  const alvo = ed.secoes[idx];
-  if (ed.novoCompasso || alvo.compassos.length === 0) alvo.compassos.push([token]);
-  else alvo.compassos[alvo.compassos.length - 1].push(token);
-  ed.novoCompasso = true;
-}
 function adicionarAcorde(raiz) {
   const ed = state.editor;
   const raizExibida = ed.useFlats ? sharpToFlatLabel(raiz) : raiz;
-  adicionarToken(raizExibida + ed.qualidade);
-}
-function adicionarSimbolo(simbolo) {
-  adicionarToken(simbolo);
+  const acorde = raizExibida + ed.qualidade;
+  if (ed.secoes.length === 0) return;
+  const idx = Math.min(ed.secaoAtivaIdx, ed.secoes.length - 1);
+  const alvo = ed.secoes[idx];
+  if (ed.novoCompasso || alvo.compassos.length === 0) alvo.compassos.push([acorde]);
+  else alvo.compassos[alvo.compassos.length - 1].push(acorde);
+  ed.novoCompasso = true;
 }
 function desfazer() {
   const ed = state.editor;
@@ -314,10 +383,11 @@ function publicar() {
   if (!ed.titulo.trim() || !ed.autor.trim()) { ed.erro = "Preencha o título e o seu nome."; render(); return; }
   if (ed.secoes.length === 0) { ed.erro = "Adicione pelo menos um acorde antes de publicar."; render(); return; }
   if (ed.categoria === "oficial" && ed.pin !== PIN_OFICIAL) { ed.erro = "PIN incorreto para publicar no Repertório Oficial."; render(); return; }
+  if (!state.usuario) { ed.erro = "Você precisa estar logado pra publicar."; render(); return; }
 
   ed.publicando = true;
   render();
-  const dados = { title: ed.titulo.trim(), author: ed.autor.trim(), category: ed.categoria, secoes: ed.secoes };
+  const dados = { title: ed.titulo.trim(), author: ed.autor.trim(), category: ed.categoria, secoes: ed.secoes, user_id: state.usuario.id };
   const operacao = ed.editandoId
     ? supabaseClient.from("songs").update(dados).eq("id", ed.editandoId)
     : supabaseClient.from("songs").insert(dados);
@@ -336,7 +406,22 @@ function bindEvents() {
   elementos.forEach(function (el) {
     const action = el.dataset.action;
 
-    if (action === "ir") el.addEventListener("click", function () { state.musicaAberta = null; state.page = el.dataset.page; render(); });
+    if (action === "ir") el.addEventListener("click", function () { state.musicaAberta = null; state.loginErro = ""; state.page = el.dataset.page; render(); });
+    if (action === "logout") el.addEventListener("click", sair);
+    if (action === "fazer-login") el.addEventListener("click", function () {
+      const email = document.getElementById("login-email").value.trim();
+      const senha = document.getElementById("login-senha").value;
+      if (!email || !senha) { state.loginErro = "Preencha e-mail e senha."; render(); return; }
+      entrar(email, senha);
+    });
+    if (action === "fazer-cadastro") el.addEventListener("click", function () {
+      const email = document.getElementById("login-email").value.trim();
+      const senha = document.getElementById("login-senha").value;
+      if (!email || !senha) { state.loginErro = "Preencha e-mail e senha."; render(); return; }
+      if (senha.length < 6) { state.loginErro = "A senha precisa ter pelo menos 6 caracteres."; render(); return; }
+      criarConta(email, senha);
+    });
+    if (action === "toggle-tema") el.addEventListener("click", alternarTema);
     if (action === "abrir-musica") el.addEventListener("click", function () { state.musicaAberta = encontrarMusicaPorId(el.dataset.id); state.viewer = { semitons: 0, useFlats: false }; render(); });
     if (action === "voltar") el.addEventListener("click", function () { state.musicaAberta = null; render(); });
     if (action === "editar-musica") el.addEventListener("click", function () { carregarMusicaNoEditor(encontrarMusicaPorId(el.dataset.id)); render(); });
@@ -347,12 +432,6 @@ function bindEvents() {
     if (action === "toggle-flats-editor") el.addEventListener("change", function () { state.editor.useFlats = el.checked; render(); });
     if (action === "qualidade") el.addEventListener("click", function () { state.editor.qualidade = el.dataset.suffix; render(); });
     if (action === "nota") el.addEventListener("click", function () { adicionarAcorde(el.dataset.nota); render(); });
-    if (action === "simbolo") el.addEventListener("click", function () { adicionarSimbolo(el.dataset.simbolo); render(); });
-    if (action === "simbolo-custom") el.addEventListener("click", function () {
-      const campo = document.getElementById("campo-simbolo-custom");
-      adicionarSimbolo(campo ? campo.value.trim() : "");
-      render();
-    });
     if (action === "toggle-compasso") el.addEventListener("click", function () { state.editor.novoCompasso = false; render(); });
     if (action === "desfazer") el.addEventListener("click", function () { desfazer(); render(); });
     if (action === "nova-secao") el.addEventListener("click", function () { iniciarSecao(el.dataset.nome); render(); });
@@ -380,3 +459,4 @@ function bindEvents() {
 resetEditor();
 render();
 carregarMusicas();
+iniciarAuth();
